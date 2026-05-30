@@ -9,8 +9,8 @@ class Despesa(db.Model):
     valor = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), nullable=False, default="pendente")  # 'pendente' ou 'pago'
     data = db.Column(db.DateTime, default=datetime.utcnow)
-    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-
+    motorista_id = db.Column(db.Integer, db.ForeignKey("motoristas.matricula"), nullable=False)
+    
     def to_dict(self):
         return {
             "id": self.id,
@@ -18,5 +18,5 @@ class Despesa(db.Model):
             "valor": self.valor,
             "status": self.status,
             "data": self.data.isoformat(),
-            "usuario_id": self.usuario_id
+            "usuario_id": self.motorista_id
         }

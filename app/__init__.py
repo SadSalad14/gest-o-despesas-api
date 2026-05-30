@@ -10,12 +10,14 @@ def create_app():
 
     db.init_app(app)
 
-    api = Api(app, title="Controle de Despesas Corporativas", version="1.0", doc="/swagger")
+    api = Api(app, title="LogTrans — Controle de Despesas", version="1.0", doc="/swagger")
 
-    from app.controllers.usuario_controller import ns as usuario_ns
+    from app.controllers.motorista_controller import ns as motorista_ns
+    from app.controllers.gestor_controller import ns as gestor_ns
     from app.controllers.despesa_controller import ns as despesa_ns
 
-    api.add_namespace(usuario_ns)
+    api.add_namespace(motorista_ns)
+    api.add_namespace(gestor_ns)
     api.add_namespace(despesa_ns)
 
     return app
