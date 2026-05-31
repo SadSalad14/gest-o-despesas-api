@@ -2,30 +2,30 @@ from flask_restx import Namespace, Resource, fields
 from app import db
 from app.models.gestor import Gestor
 
-ns = Namespace("gestores", description="Operações de gestores")
+ns = Namespace("gestores", description="Gerenciamento de gestores responsáveis pela aprovação de despesas")
 
 gestor_model = ns.model("Gestor", {
-    "nome": fields.String(required=True, description="Nome do gestor"),
-    "email": fields.String(required=True, description="Email do gestor")
+    "nome": fields.String(required=True, description="Nome completo do gestor"),
+    "email": fields.String(required=True, description="Email corporativo do gestor (deve ser único)")
 })
 
 @ns.route("/")
 class GestorList(Resource):
     def get(self):
-        """Lista todos os gestores"""
+        """Retorna a lista completa de gestores cadastrados"""
         gestores = Gestor.query.all()
         return [g.to_dict() for g in gestores], 200
 
     @ns.expect(gestor_model)
     def post(self):
-        """Cadastra um novo gestor"""
+        """Cadastra um novo gestor. Email deve ser único no sistema."""
         dados = ns.payload
 
         if not dados.get("nome") or not dados.get("email"):
             return {"erro": "Todos os campos são obrigatórios"}, 400
 
         if Gestor.query.filter_by(email=dados["email"]).first():
-            return {"erro": "Email já cadastrado"}, 409
+            return {"erro": "Email já cadastrado no sistema"}, 409
 
         try:
             gestor = Gestor(nome=dados["nome"], email=dados["email"])
@@ -44,12 +44,12 @@ class GestorItem(Resource):
         return gestor.to_dict(), 200
 
     def delete(self, matricula):
-        """Deleta um gestor"""
+        """Remove um gestor do sistema pela matrícula"""
         gestor = Gestor.query.get_or_404(matricula)
         try:
             db.session.delete(gestor)
             db.session.commit()
-            return {"mensagem": "Gestor deletado com sucesso"}, 200
+            return {"mensagem": "Gestor removido com sucesso"}, 200
         except Exception as e:
             db.session.rollback()
             return {"erro": str(e)}, 500
