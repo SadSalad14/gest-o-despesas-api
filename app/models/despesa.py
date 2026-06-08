@@ -7,11 +7,10 @@ class Despesa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     descricao = db.Column(db.String(200), nullable=False)
     valor = db.Column(db.Float, nullable=False)
-    categoria = db.Column(db.String(30), nullable=False, default="geral")  # 'abastecimento', 'pedagio', 'manutencao', 'multa', 'geral'
+    categoria = db.Column(db.String(30), nullable=False, default="geral")
     status = db.Column(db.String(20), nullable=False, default="pendente")
     data = db.Column(db.DateTime, default=datetime.utcnow)
-    latitude = db.Column(db.Float, nullable=True)
-    longitude = db.Column(db.Float, nullable=True)
+    localizacao = db.Column(db.String(100), nullable=True)
     motorista_id = db.Column(db.Integer, db.ForeignKey("motoristas.matricula"), nullable=False)
     veiculo_placa = db.Column(db.String(7), db.ForeignKey("veiculos.placa"), nullable=True)
 
@@ -23,8 +22,7 @@ class Despesa(db.Model):
             "categoria": self.categoria,
             "status": self.status,
             "data": self.data.isoformat(),
-            "latitude": self.latitude,
-            "longitude": self.longitude,
+            "localizacao": self.localizacao,
             "motorista_id": self.motorista_id,
             "veiculo_placa": self.veiculo_placa
         }

@@ -25,7 +25,9 @@ def create_app():
     from app.controllers.gestor_controller import ns as gestor_ns
     from app.controllers.veiculo_controller import ns as veiculo_ns
     from app.controllers.despesa_controller import ns as despesa_ns
+    from app.controllers.viagem_controller import ns as viagem_ns
 
+    api.add_namespace(viagem_ns)
     api.add_namespace(motorista_ns)
     api.add_namespace(gestor_ns)
     api.add_namespace(veiculo_ns)

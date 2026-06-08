@@ -3,43 +3,32 @@ from app import db
 from app.models.despesa import Despesa
 from app.models.motorista import Motorista
 from app.models.gestor import Gestor
-import math
 
-ns = Namespace("despesas", description="Registro e aprovação de despesas corporativas da frota")
+ns = Namespace("despesas", description="Registro e aprovacao de despesas corporativas da frota")
 
 despesa_model = ns.model("Despesa", {
-    "descricao": fields.String(required=True, description="Descrição da despesa (ex: Abastecimento SP-RJ)"),
+    "descricao": fields.String(required=True, description="Descricao da despesa (ex: Abastecimento SP-RJ)"),
     "valor": fields.Float(required=True, description="Valor em reais, maior que zero (ex: 150.50)"),
-    "categoria": fields.String(required=False, description="Categoria: abastecimento, pedagio, manutencao, geral. Padrão: geral"),
-    "motorista_matricula": fields.Integer(required=True, description="Matrícula do motorista que gerou a despesa"),
-    "veiculo_placa": fields.String(required=False, description="Placa do veículo associado à despesa"),
-    "latitude": fields.Float(required=False, description="Latitude GPS do local da despesa"),
-    "longitude": fields.Float(required=False, description="Longitude GPS do local da despesa")
+    "categoria": fields.String(required=False, description="Categoria: abastecimento, pedagio, manutencao, geral. Padrao: geral"),
+    "motorista_matricula": fields.Integer(required=True, description="Matricula do motorista que gerou a despesa"),
+    "veiculo_placa": fields.String(required=False, description="Placa do veiculo associado"),
+    "localizacao": fields.String(required=False, description="Cidade ou local da despesa (ex: Caruaru, PE)")
 })
 
 pagamento_model = ns.model("Pagamento", {
-    "gestor_matricula": fields.Integer(required=True, description="Matrícula do gestor que autoriza o pagamento")
+    "gestor_matricula": fields.Integer(required=True, description="Matricula do gestor que autoriza o pagamento")
 })
 
 multa_model = ns.model("Multa", {
-    "descricao": fields.String(required=True, description="Descrição da multa"),
+    "descricao": fields.String(required=True, description="Descricao da multa"),
     "valor": fields.Float(required=True, description="Valor da multa em reais"),
-    "gestor_matricula": fields.Integer(required=True, description="Matrícula do gestor que registra a multa"),
-    "motorista_matricula": fields.Integer(required=True, description="Matrícula do motorista que recebeu a multa"),
-    "veiculo_placa": fields.String(required=False, description="Placa do veículo envolvido"),
-    "latitude": fields.Float(required=False, description="Latitude do local da multa"),
-    "longitude": fields.Float(required=False, description="Longitude do local da multa")
+    "gestor_matricula": fields.Integer(required=True, description="Matricula do gestor que registra a multa"),
+    "motorista_matricula": fields.Integer(required=True, description="Matricula do motorista que recebeu a multa"),
+    "veiculo_placa": fields.String(required=False, description="Placa do veiculo envolvido"),
+    "localizacao": fields.String(required=False, description="Local onde a multa foi aplicada")
 })
 
 CATEGORIAS_VALIDAS = ["abastecimento", "pedagio", "manutencao", "geral"]
-
-def distancia_km(lat1, lon1, lat2, lon2):
-    """Calcula distância entre dois pontos GPS em km (fórmula de Haversine)"""
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 @ns.route("/")
 class DespesaList(Resource):
@@ -54,36 +43,24 @@ class DespesaList(Resource):
         dados = ns.payload
 
         if not dados.get("descricao") or not dados.get("valor") or not dados.get("motorista_matricula"):
-            return {"erro": "Todos os campos são obrigatórios"}, 400
+            return {"erro": "Todos os campos obrigatorios devem ser preenchidos"}, 400
 
         if dados["valor"] <= 0:
             return {"erro": "Valor deve ser maior que zero"}, 400
 
         categoria = dados.get("categoria", "geral")
         if categoria not in CATEGORIAS_VALIDAS:
-            return {"erro": f"Categoria inválida. Use: {', '.join(CATEGORIAS_VALIDAS)}"}, 400
+            return {"erro": f"Categoria invalida. Use: {', '.join(CATEGORIAS_VALIDAS)}"}, 400
+
+        if categoria == "pedagio":
+            return {"erro": "Para registrar pedagogios de viagem use a rota POST /viagens/{id}/pedagio"}, 403
 
         if categoria == "multa":
             return {"erro": "Para registrar multas use a rota POST /despesas/multa"}, 403
 
         motorista = Motorista.query.get(dados["motorista_matricula"])
         if not motorista:
-            return {"erro": "Motorista não encontrado"}, 404
-
-        # Verificação GPS — alerta se despesa tiver GPS mas estiver a mais de 500km de outras do mesmo motorista
-        alerta_gps = None
-        lat = dados.get("latitude")
-        lon = dados.get("longitude")
-        if lat and lon:
-            despesas_anteriores = Despesa.query.filter_by(
-                motorista_id=dados["motorista_matricula"]
-            ).filter(Despesa.latitude.isnot(None)).order_by(Despesa.data.desc()).limit(3).all()
-
-            for d in despesas_anteriores:
-                dist = distancia_km(lat, lon, d.latitude, d.longitude)
-                if dist > 500:
-                    alerta_gps = f"Alerta: localização incomum — {dist:.0f}km de distância de registros anteriores deste motorista"
-                    break
+            return {"erro": "Motorista nao encontrado"}, 404
 
         try:
             despesa = Despesa(
@@ -92,15 +69,11 @@ class DespesaList(Resource):
                 categoria=categoria,
                 motorista_id=dados["motorista_matricula"],
                 veiculo_placa=dados.get("veiculo_placa"),
-                latitude=lat,
-                longitude=lon
+                localizacao=dados.get("localizacao")
             )
             db.session.add(despesa)
             db.session.commit()
-            resultado = despesa.to_dict()
-            if alerta_gps:
-                resultado["alerta"] = alerta_gps
-            return resultado, 201
+            return despesa.to_dict(), 201
         except Exception as e:
             db.session.rollback()
             return {"erro": str(e)}, 500
@@ -113,18 +86,18 @@ class DespesaMulta(Resource):
         dados = ns.payload
 
         if not all(dados.get(c) for c in ["descricao", "valor", "gestor_matricula", "motorista_matricula"]):
-            return {"erro": "Todos os campos são obrigatórios"}, 400
+            return {"erro": "Todos os campos obrigatorios devem ser preenchidos"}, 400
 
         if dados["valor"] <= 0:
             return {"erro": "Valor deve ser maior que zero"}, 400
 
         gestor = Gestor.query.get(dados["gestor_matricula"])
         if not gestor:
-            return {"erro": "Gestor não encontrado. Apenas gestores podem registrar multas."}, 403
+            return {"erro": "Gestor nao encontrado. Apenas gestores podem registrar multas."}, 403
 
         motorista = Motorista.query.get(dados["motorista_matricula"])
         if not motorista:
-            return {"erro": "Motorista não encontrado"}, 404
+            return {"erro": "Motorista nao encontrado"}, 404
 
         try:
             despesa = Despesa(
@@ -133,8 +106,7 @@ class DespesaMulta(Resource):
                 categoria="multa",
                 motorista_id=dados["motorista_matricula"],
                 veiculo_placa=dados.get("veiculo_placa"),
-                latitude=dados.get("latitude"),
-                longitude=dados.get("longitude")
+                localizacao=dados.get("localizacao")
             )
             db.session.add(despesa)
             db.session.commit()
@@ -171,10 +143,10 @@ class DespesaPagamento(Resource):
 
         gestor = Gestor.query.get(dados["gestor_matricula"])
         if not gestor:
-            return {"erro": "Gestor não encontrado"}, 404
+            return {"erro": "Gestor nao encontrado"}, 404
 
         if despesa.status == "pago":
-            return {"erro": "Esta despesa já foi aprovada e paga"}, 400
+            return {"erro": "Esta despesa ja foi aprovada e paga"}, 400
 
         try:
             despesa.status = "pago"
