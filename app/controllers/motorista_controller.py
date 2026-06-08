@@ -7,10 +7,12 @@ ns = Namespace("motoristas", description="Gerenciamento de motoristas da frota L
 
 motorista_model = ns.model("Motorista", {
     "nome": fields.String(required=True, description="Nome completo do motorista"),
-    "cpf": fields.String(required=True, description="CPF do motorista (11 dígitos, sem pontos ou traços)"),
+    "cpf": fields.String(required=True, description="CPF (11 dígitos, sem pontos ou traços)"),
+    "email": fields.String(required=True, description="Email do motorista"),
+    "telefone": fields.String(required=True, description="Telefone (11 dígitos, ex: 81999990000)"),
     "tp_cnh": fields.String(required=True, description="Categoria da CNH (ex: B, C, D, E, AE)"),
-    "validade_cnh": fields.String(required=True, description="Data de validade da CNH no formato AAAA-MM-DD"),
-    "status": fields.String(required=False, description="Status do motorista: AT (ativo) ou NT (não ativo). Padrão: AT")
+    "validade_cnh": fields.String(required=True, description="Validade da CNH no formato AAAA-MM-DD"),
+    "status": fields.String(required=False, description="AT (ativo) ou NT (não ativo). Padrão: AT")
 })
 
 @ns.route("/")
@@ -22,23 +24,32 @@ class MotoristaList(Resource):
 
     @ns.expect(motorista_model)
     def post(self):
-        """Cadastra um novo motorista. CPF deve ser único e CNH válida."""
+        """Cadastra um novo motorista. CPF e email devem ser únicos."""
         dados = ns.payload
 
-        if not dados.get("nome") or not dados.get("cpf") or not dados.get("tp_cnh") or not dados.get("validade_cnh"):
+        campos = ["nome", "cpf", "email", "telefone", "tp_cnh", "validade_cnh"]
+        if not all(dados.get(c) for c in campos):
             return {"erro": "Todos os campos são obrigatórios"}, 400
 
         if len(dados["cpf"]) != 11:
-            return {"erro": "CPF deve ter exatamente 11 dígitos, sem pontos ou traços"}, 400
+            return {"erro": "CPF deve ter exatamente 11 dígitos"}, 400
+
+        if len(dados["telefone"]) != 11:
+            return {"erro": "Telefone deve ter 11 dígitos (ex: 81999990000)"}, 400
 
         if Motorista.query.filter_by(cpf=dados["cpf"]).first():
             return {"erro": "CPF já cadastrado no sistema"}, 409
+
+        if Motorista.query.filter_by(email=dados["email"]).first():
+            return {"erro": "Email já cadastrado no sistema"}, 409
 
         try:
             validade = date.fromisoformat(dados["validade_cnh"])
             motorista = Motorista(
                 nome=dados["nome"],
                 cpf=dados["cpf"],
+                email=dados["email"],
+                telefone=dados["telefone"],
                 tp_cnh=dados["tp_cnh"],
                 validade_cnh=validade,
                 status=dados.get("status", "AT")

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogTrans — API de Despesas</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+        header { background: #1a1f2e; border-bottom: 2px solid #2563eb; padding: 24px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 1.8rem; color: #fff; }
+        header span { background: #2563eb; color: #fff; font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; }
+        main { max-width: 960px; margin: 48px auto; padding: 0 24px; }
+        .hero { text-align: center; margin-bottom: 48px; }
+        .hero h2 { font-size: 2rem; margin-bottom: 12px; }
+        .hero p { color: #94a3b8; font-size: 1.1rem; max-width: 600px; margin: 0 auto 24px; }
+        .btn { display: inline-block; background: #2563eb; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 1rem; transition: background 0.2s; }
+        .btn:hover { background: #1d4ed8; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 48px; }
+        .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 24px; }
+        .card h3 { color: #60a5fa; margin-bottom: 8px; font-size: 1rem; }
+        .card p { color: #94a3b8; font-size: 0.9rem; line-height: 1.5; }
+        .endpoints { background: #1a1f2e; border-radius: 12px; padding: 24px; }
+        .endpoints h3 { margin-bottom: 16px; color: #e2e8f0; }
+        .ep { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #2d3748; }
+        .ep:last-child { border-bottom: none; }
+        .method { font-size: 0.75rem; font-weight: bold; padding: 3px 8px; border-radius: 4px; min-width: 52px; text-align: center; }
+        .get { background: #064e3b; color: #34d399; }
+        .post { background: #1e3a5f; color: #60a5fa; }
+        .patch { background: #3b2a00; color: #fbbf24; }
+        .del { background: #4c1d1d; color: #f87171; }
+        .ep span { color: #94a3b8; font-size: 0.9rem; font-family: monospace; }
+        footer { text-align: center; color: #4a5568; padding: 32px; margin-top: 48px; border-top: 1px solid #2d3748; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🚛 LogTrans</h1>
+        <span>v2.0</span>
+    </header>
+    <main>
+        <div class="hero">
+            <h2>API de Controle de Despesas Corporativas</h2>
+            <p>Gerencie motoristas, gestores, veículos e despesas da frota com rastreamento GPS e controle de acesso por perfil.</p>
+            <a class="btn" href="/swagger">Acessar Documentação Swagger</a>
+        </div>
+        <div class="grid">
+            <div class="card">
+                <h3>🧑‍✈️ Motoristas</h3>
+                <p>Cadastro completo com CPF, CNH, telefone e status de atividade.</p>
+            </div>
+            <div class="card">
+                <h3>👔 Gestores</h3>
+                <p>Perfil com departamento. Apenas gestores aprovam pagamentos e registram multas.</p>
+            </div>
+            <div class="card">
+                <h3>🚚 Veículos</h3>
+                <p>Controle de frota própria e locada com quilometragem e status operacional.</p>
+            </div>
+            <div class="card">
+                <h3>📍 GPS Anti-Fraude</h3>
+                <p>Despesas com coordenadas recebem alerta automático se registradas em localização suspeita.</p>
+            </div>
+        </div>
+        <div class="endpoints">
+            <h3>Principais Endpoints</h3>
+            <div class="ep"><span class="method get">GET</span><span>/motoristas/ — Lista todos os motoristas</span></div>
+            <div class="ep"><span class="method post">POST</span><span>/motoristas/ — Cadastra motorista</span></div>
+            <div class="ep"><span class="method get">GET</span><span>/gestores/ — Lista todos os gestores</span></div>
+            <div class="ep"><span class="method post">POST</span><span>/gestores/ — Cadastra gestor</span></div>
+            <div class="ep"><span class="method get">GET</span><span>/veiculos/ — Lista frota completa</span></div>
+            <div class="ep"><span class="method post">POST</span><span>/veiculos/ — Cadastra veículo</span></div>
+            <div class="ep"><span class="method patch">PATCH</span><span>/veiculos/{placa}/quilometragem — Atualiza km</span></div>
+            <div class="ep"><span class="method get">GET</span><span>/despesas/ — Lista todas as despesas</span></div>
+            <div class="ep"><span class="method post">POST</span><span>/despesas/ — Registra despesa</span></div>
+            <div class="ep"><span class="method post">POST</span><span>/despesas/multa — Registra multa (só gestor)</span></div>
+            <div class="ep"><span class="method patch">PATCH</span><span>/despesas/{id}/pagar — Aprova pagamento (só gestor)</span></div>
+        </div>
+    </main>
+    <footer>LogTrans © 2026 — Uninassau · Back-end Frameworks</footer>
+</body>
+</html>
