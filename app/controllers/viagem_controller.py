@@ -4,6 +4,24 @@ from app.models.viagem import Viagem
 from app.models.pedagio import Pedagio
 from app.models.motorista import Motorista
 from app.models.veiculo import Veiculo
+import requests as http_requests
+from flask import request
+
+def obter_localizacao_por_ip(ip):
+    """Consulta a IP-API e retorna cidade e regiao do IP."""
+    try:
+        # Em ambiente local o IP é 127.0.0.1, então usamos o IP público da máquina
+        if ip in ("127.0.0.1", "::1", "localhost"):
+            resposta = http_requests.get("http://ip-api.com/json/", timeout=3)
+        else:
+            resposta = http_requests.get(f"http://ip-api.com/json/{ip}", timeout=3)
+
+        dados = resposta.json()
+        if dados.get("status") == "success":
+            return f"{dados.get('city', '')}, {dados.get('regionName', '')}"
+    except Exception:
+        pass
+    return None
 
 ns = Namespace("viagens", description="Gerenciamento de viagens e conciliacao de pedagios")
 
@@ -17,7 +35,7 @@ viagem_model = ns.model("Viagem", {
 
 pedagio_model = ns.model("Pedagio", {
     "valor": fields.Float(required=True, description="Valor cobrado na praca de pedagio"),
-    "localizacao": fields.String(required=True, description="Cidade ou trecho onde o pedagio foi cobrado (ex: Caruaru, PE)"),
+    "localizacao": fields.String(required=False, description="Opcional: cidade do pedagio. Se nao informado, detectado automaticamente via IP."),
     "veiculo_tag": fields.Integer(required=False, description="Tag do veiculo que passou pelo pedagio")
 })
 
@@ -116,27 +134,38 @@ class ViagemPedagio(Resource):
     def post(self, id):
         """
         Registra um pedagio em uma viagem.
-        A API cruza automaticamente a localizacao com a rota prevista
-        e gera status: conciliado ou alerta (Lei 10.209/2001).
+        A API detecta automaticamente a localizacao via IP e cruza com a rota prevista.
+        Status gerado automaticamente: conciliado ou alerta (Lei 10.209/2001).
         """
         viagem = Viagem.query.get_or_404(id)
         dados = ns.payload
 
-        if not dados.get("valor") or not dados.get("localizacao"):
-            return {"erro": "Valor e localizacao sao obrigatorios"}, 400
+        if not dados.get("valor"):
+            return {"erro": "Valor e obrigatorio"}, 400
 
         if dados["valor"] <= 0:
             return {"erro": "Valor deve ser maior que zero"}, 400
 
         if viagem.status != "em_andamento":
-            return {"erro": f"Viagem esta com status '{viagem.status}'. Apenas viagens em andamento aceitam pedagios."}, 400
+            return {"erro": f"Viagem esta com status '{viagem.status}'. Apenas viagens em andamento aceitam pedagogios."}, 400
 
-        status_conc, observacao = conciliar_pedagio(dados["localizacao"], viagem)
+        # Tenta detectar localização pelo IP automaticamente
+        ip_cliente = request.headers.get("X-Forwarded-For", request.remote_addr)
+        localizacao_ip = obter_localizacao_por_ip(ip_cliente)
+
+        # Se o motorista informou localização manualmente, usa ela; senão usa a do IP
+        localizacao_final = dados.get("localizacao") or localizacao_ip or "Localizacao nao identificada"
+
+        status_conc, observacao = conciliar_pedagio(localizacao_final, viagem)
+
+        # Adiciona info de origem da localização na observação
+        if localizacao_ip and not dados.get("localizacao"):
+            observacao += f" (Localizacao detectada automaticamente via IP: {localizacao_final})"
 
         try:
             pedagio = Pedagio(
                 valor=dados["valor"],
-                localizacao=dados["localizacao"],
+                localizacao=localizacao_final,
                 status_conciliacao=status_conc,
                 observacao=observacao,
                 viagem_id=id,
@@ -148,20 +177,3 @@ class ViagemPedagio(Resource):
         except Exception as e:
             db.session.rollback()
             return {"erro": str(e)}, 500
-
-    def get(self, id):
-        """Lista todos os pedagios de uma viagem com status de conciliacao"""
-        viagem = Viagem.query.get_or_404(id)
-        pedagios = Pedagio.query.filter_by(viagem_id=id).all()
-        total = sum(p.valor for p in pedagios)
-        alertas = [p.to_dict() for p in pedagios if p.status_conciliacao == "alerta"]
-        conciliados = [p.to_dict() for p in pedagios if p.status_conciliacao == "conciliado"]
-
-        return {
-            "viagem_id": id,
-            "rota": f"{viagem.origem} → {viagem.destino}",
-            "total_gasto_pedagios": total,
-            "total_conciliados": len(conciliados),
-            "total_alertas": len(alertas),
-            "pedagios": [p.to_dict() for p in pedagios]
-        }, 200

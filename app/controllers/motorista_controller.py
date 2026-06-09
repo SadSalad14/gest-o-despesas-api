@@ -7,6 +7,7 @@ ns = Namespace("motoristas", description="Gerenciamento de motoristas da frota L
 
 motorista_model = ns.model("Motorista", {
     "nome": fields.String(required=True, description="Nome completo do motorista"),
+    "sexo": fields.String(required=True, description="Sexo do motorista"),
     "cpf": fields.String(required=True, description="CPF (11 dígitos, sem pontos ou traços)"),
     "email": fields.String(required=True, description="Email do motorista"),
     "telefone": fields.String(required=True, description="Telefone (11 dígitos, ex: 81999990000)"),
@@ -47,6 +48,7 @@ class MotoristaList(Resource):
             validade = date.fromisoformat(dados["validade_cnh"])
             motorista = Motorista(
                 nome=dados["nome"],
+                sexo=dados["sexo"],
                 cpf=dados["cpf"],
                 email=dados["email"],
                 telefone=dados["telefone"],

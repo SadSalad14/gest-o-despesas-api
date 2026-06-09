@@ -5,6 +5,7 @@ class Motorista(db.Model):
 
     matricula = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(50), nullable=False)
+    sexo = db.Column(db.String(9), nullable=False)
     cpf = db.Column(db.String(11), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     telefone = db.Column(db.String(11), nullable=False)
@@ -18,6 +19,7 @@ class Motorista(db.Model):
         return {
             "matricula": self.matricula,
             "nome": self.nome,
+            "sexo": self.sexo,
             "cpf": self.cpf,
             "email": self.email,
             "telefone": self.telefone,
