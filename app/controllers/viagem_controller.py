@@ -1,20 +1,22 @@
+import os
+from datetime import datetime
 from flask_restx import Namespace, Resource, fields
+from werkzeug.datastructures import FileStorage
+from flask import request
+import requests as http_requests
 from app import db
 from app.models.viagem import Viagem
 from app.models.pedagio import Pedagio
 from app.models.motorista import Motorista
 from app.models.veiculo import Veiculo
-import requests as http_requests
-from flask import request
 
 def obter_localizacao_por_ip(ip):
     """Consulta a IP-API e retorna cidade e regiao do IP."""
     try:
-        # Em ambiente local o IP é 127.0.0.1, então usamos o IP público da máquina
         if ip in ("127.0.0.1", "::1", "localhost"):
-            resposta = http_requests.get("http://ip-api.com/json/", timeout=3)
+            resposta = http_requests.get("http://ip-api.com", timeout=3)
         else:
-            resposta = http_requests.get(f"http://ip-api.com/json/{ip}", timeout=3)
+            resposta = http_requests.get(f"http://ip-api.com{ip}", timeout=3)
 
         dados = resposta.json()
         if dados.get("status") == "success":
@@ -33,37 +35,31 @@ viagem_model = ns.model("Viagem", {
     "veiculo_tag": fields.Integer(required=False, description="Tag do veiculo")
 })
 
-pedagio_model = ns.model("Pedagio", {
-    "valor": fields.Float(required=True, description="Valor cobrado na praca de pedagio"),
-    "localizacao": fields.String(required=False, description="Opcional: cidade do pedagio. Se nao informado, detectado automaticamente via IP."),
-    "veiculo_tag": fields.Integer(required=False, description="Tag do veiculo que passou pelo pedagio")
-})
-
 status_model = ns.model("StatusViagem", {
     "status": fields.String(required=True, description="Novo status: concluida ou cancelada")
 })
 
-def conciliar_pedagio(localizacao, viagem):
-    """
-    Verifica se a localização do pedágio está dentro da rota prevista.
-    Retorna (status, observacao).
-    """
-    loc = localizacao.lower().strip()
-    cidades = viagem.cidades_lista()
+# Estruturação do Parser Multipart para suportar upload de arquivos de imagem e formulário
+pedagio_parser = ns.parser()
+pedagio_parser.add_argument("valor", type=float, required=True, location="form", help="Valor cobrado na praca de pedagio")
+pedagio_parser.add_argument("localizacao", type=str, required=False, location="form", help="Nome/identificacao manual da praca")
+pedagio_parser.add_argument("comprovante_tag", type=int, required=False, location="form", help="Opcional: TAG lida pelo sistema físico externo")
+pedagio_parser.add_argument("comprovante_localizacao", type=str, required=False, location="form", help="Opcional: Cidade extraída do comprovante físico")
+pedagio_parser.add_argument("imagem", location="files", type=FileStorage, required=False, help="Foto/Upload do comprovante físico para indexação")
 
-    # Verifica se alguma cidade da rota está contida na localização informada
+def avaliar_trajeto(localizacao_teste, viagem):
+    """Auxiliar para checar se uma determinada string de localização pertence à rota da viagem"""
+    if not localizacao_teste:
+        return False
+    loc = localizacao_teste.lower().strip()
+    cidades = viagem.cidades_lista()
+    
     for cidade in cidades:
         if cidade in loc or loc in cidade:
-            return "conciliado", f"Localizacao '{localizacao}' confirmada na rota prevista."
-
-    # Verifica origem e destino também
+            return True
     if viagem.origem.lower() in loc or viagem.destino.lower() in loc:
-        return "conciliado", f"Localizacao '{localizacao}' confirmada na rota prevista."
-
-    return "alerta", (
-        f"ALERTA Lei 10.209/2001: Localizacao '{localizacao}' nao identificada na rota prevista "
-        f"({viagem.origem} → {viagem.destino}). Verifique se o motorista desviou da rota contratada."
-    )
+        return True
+    return False
 
 @ns.route("/")
 class ViagemList(Resource):
@@ -130,50 +126,93 @@ class ViagemItem(Resource):
 
 @ns.route("/<int:id>/pedagio")
 class ViagemPedagio(Resource):
-    @ns.expect(pedagio_model)
+    @ns.expect(pedagio_parser)
     def post(self, id):
         """
-        Registra um pedagio em uma viagem.
-        A API detecta automaticamente a localizacao via IP e cruza com a rota prevista.
-        Status gerado automaticamente: conciliado ou alerta (Lei 10.209/2001).
+        Registra e audita um pedagio vinculado a uma viagem ativa.
+        Realiza cruzamento inteligente antifraude de TAGs, rota planejada e indexação de imagem.
         """
         viagem = Viagem.query.get_or_404(id)
-        dados = ns.payload
+        args = pedagio_parser.parse_args()
 
-        if not dados.get("valor"):
-            return {"erro": "Valor e obrigatorio"}, 400
+        valor = args["valor"]
+        localizacao_manual = args.get("localizacao")
+        comp_tag = args.get("comprovante_tag")
+        comp_localizacao = args.get("comprovante_localizacao")
+        imagem_arquivo = args.get("imagem")
 
-        if dados["valor"] <= 0:
+        if valor <= 0:
             return {"erro": "Valor deve ser maior que zero"}, 400
 
         if viagem.status != "em_andamento":
-            return {"erro": f"Viagem esta com status '{viagem.status}'. Apenas viagens em andamento aceitam pedagogios."}, 400
+            return {"erro": f"Viagem possui status '{viagem.status}'. Registros bloqueados."}, 400
 
-        # Tenta detectar localização pelo IP automaticamente
+        # 1. Rastreamento e detecção automática de localização por IP
         ip_cliente = request.headers.get("X-Forwarded-For", request.remote_addr)
         localizacao_ip = obter_localizacao_por_ip(ip_cliente)
+        
+        localizacao_final = localizacao_manual or localizacao_ip or "Localizacao nao identificada"
 
-        # Se o motorista informou localização manualmente, usa ela; senão usa a do IP
-        localizacao_final = dados.get("localizacao") or localizacao_ip or "Localizacao nao identificada"
+        # 2. Motor Antifraude Integrado
+        status_conciliacao = "conciliado"
+        alertas = []
 
-        status_conc, observacao = conciliar_pedagio(localizacao_final, viagem)
+        # Validação de Rota A: Localização Declarada/IP
+        if not avaliar_trajeto(localizacao_final, viagem):
+            status_conciliacao = "alerta"
+            alertas.append(f"Localizacao declarada/IP '{localizacao_final}' fora do trajeto contratado.")
 
-        # Adiciona info de origem da localização na observação
-        if localizacao_ip and not dados.get("localizacao"):
-            observacao += f" (Localizacao detectada automaticamente via IP: {localizacao_final})"
+        # Validação de Rota B: Cidade impressa no Comprovante Físico Externo
+        if comp_localizacao and not avaliar_trajeto(comp_localizacao, viagem):
+            status_conciliacao = "alerta"
+            alertas.append(f"Cidade do comprovante '{comp_localizacao}' nao faz parte da rota planejada.")
+
+        # Validação de Hardware: Cruzamento de TAG de segurança do Veículo
+        if comp_tag and viagem.veiculo_tag and (viagem.veiculo_tag != comp_tag):
+            status_conciliacao = "alerta"
+            alertas.append(f"TAG divergente! Sistema: {viagem.veiculo_tag} | Comprovante: {comp_tag}")
+
+        # Montagem do log de auditoria
+        if alertas:
+            observacao = " | ".join(alertas)
+        else:
+            observacao = f"Confirmado na rota. (IP Tracker: {localizacao_ip})" if localizacao_ip else "Dados em conformidade."
+
+        # 3. Upload e indexação segura do arquivo de imagem
+        caminho_imagem_salva = None
+        if imagem_arquivo:
+            try:
+                pasta_upload = os.path.join("app", "static", "uploads", "comprovantes")
+                os.makedirs(pasta_upload, exist_ok=True)
+                
+                timestamp = int(datetime.utcnow().timestamp())
+                nome_seguro = f"viagem_{id}_{timestamp}_{imagem_arquivo.filename}"
+                caminho_completo = os.path.join(pasta_upload, nome_seguro)
+                
+                imagem_arquivo.save(caminho_completo)
+                caminho_imagem_salva = f"/static/uploads/comprovantes/{nome_seguro}"
+            except Exception as img_err:
+                observacao += f" | (Erro upload imagem: {str(img_err)})"
 
         try:
             pedagio = Pedagio(
-                valor=dados["valor"],
+                valor=valor,
                 localizacao=localizacao_final,
-                status_conciliacao=status_conc,
-                observacao=observacao,
+                status_conciliacao=status_conciliacao,
+                observacao=observacao[:200],
                 viagem_id=id,
-                veiculo_tag=dados.get("veiculo_tag")
+                veiculo_tag=viagem.veiculo_tag,
+                comprovante_tag=comp_tag,
+                comprovante_localizacao=comp_localizacao,
+                imagem_comprovante=caminho_imagem_salva
             )
             db.session.add(pedagio)
             db.session.commit()
-            return pedagio.to_dict(), 201
+            
+            resposta = pedagio.to_dict()
+            resposta["alertas_auditoria"] = alertas if alertas else "Nenhuma inconformidade detectada"
+            return resposta, 201
+            
         except Exception as e:
             db.session.rollback()
             return {"erro": str(e)}, 500
